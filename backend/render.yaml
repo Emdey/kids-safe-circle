@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: kids-safe-circle-api
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: MODERATION_PROVIDER
+        value: stub
+      - key: CORS_ORIGIN
+        sync: false
+      - key: APP_PUBLIC_URL
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: kids-safe-circle-db
+          property: connectionString
+
+databases:
+  - name: kids-safe-circle-db
+    plan: free
+    databaseName: kidssafecircle
+    user: kidssafecircle

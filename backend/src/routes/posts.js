@@ -1,0 +1,118 @@
+import { Router } from 'express';
+import { body, validationResult } from 'express-validator';
+import { pool } from '../db/pool.js';
+import { requireParent } from '../middleware/auth.js';
+import { moderateText, moderateImage } from '../services/moderation.js';
+
+export const postsRouter = Router();
+postsRouter.use(requireParent);
+
+async function assertChildBelongsToParent(childId, parentId) {
+  const result = await pool.query('SELECT id FROM children WHERE id = $1 AND parent_id = $2', [childId, parentId]);
+  return result.rowCount > 0;
+}
+
+// A child "posts" through their parent's authenticated session (see
+// KidGarden.jsx - the composer only ever calls this while a parent is
+// signed in on the shared family device). Nothing here is public yet:
+// it lands as 'seed' or 'sprout', never 'bloom', until a parent approves it.
+postsRouter.post(
+  '/',
+  [
+    body('childId').isUUID(),
+    body('contentType').isIn(['text', 'image']),
+    body('textContent').optional().isLength({ max: 500 }),
+    body('mediaUrl').optional().isURL()
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { childId, contentType, textContent, mediaUrl } = req.body;
+    if (!(await assertChildBelongsToParent(childId, req.parentId))) {
+      return res.status(403).json({ error: 'Not your child profile.' });
+    }
+
+    const check =
+      contentType === 'text' ? await moderateText(textContent || '') : await moderateImage(mediaUrl);
+
+    const result = await pool.query(
+      `INSERT INTO posts (child_id, parent_id, content_type, text_content, media_url, moderation_status, auto_check_passed, moderation_notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, moderation_status, created_at`,
+      [
+        childId,
+        req.parentId,
+        contentType,
+        textContent || null,
+        mediaUrl || null,
+        check.passed ? 'sprout' : 'seed', // 'seed' = held, failed the automated screen; 'sprout' = awaiting parent review
+        check.passed,
+        check.reason
+      ]
+    );
+
+    res.status(201).json({ post: result.rows[0] });
+  }
+);
+
+// A parent's own review queue: their children's posts, whatever the
+// automated check said, always require an explicit human decision.
+postsRouter.get('/queue', async (req, res) => {
+  const result = await pool.query(
+    `SELECT p.id, p.content_type, p.text_content, p.media_url, p.moderation_status,
+            p.auto_check_passed, p.moderation_notes, p.created_at, c.display_name AS child_name
+     FROM posts p
+     JOIN children c ON c.id = p.child_id
+     WHERE p.parent_id = $1 AND p.moderation_status IN ('seed', 'sprout')
+     ORDER BY p.created_at ASC`,
+    [req.parentId]
+  );
+  res.json({ queue: result.rows });
+});
+
+postsRouter.post('/:postId/decide', [body('decision').isIn(['bloom', 'wilted'])], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+
+  const result = await pool.query(
+    `UPDATE posts
+     SET moderation_status = $1, reviewed_at = now()
+     WHERE id = $2 AND parent_id = $3
+     RETURNING id, moderation_status`,
+    [req.body.decision, req.params.postId, req.parentId]
+  );
+
+  if (result.rowCount === 0) {
+    return res.status(404).json({ error: 'Post not found.' });
+  }
+  res.json({ post: result.rows[0] });
+});
+
+// The feed: only 'bloom' posts, only from this parent's own children plus
+// children of parents in an 'approved' connection. No global feed exists.
+postsRouter.get('/feed', async (req, res) => {
+  const result = await pool.query(
+    `SELECT p.id, p.content_type, p.text_content, p.media_url, p.created_at,
+            c.display_name AS child_name, c.avatar_key
+     FROM posts p
+     JOIN children c ON c.id = p.child_id
+     WHERE p.moderation_status = 'bloom'
+       AND (
+         p.parent_id = $1
+         OR p.parent_id IN (
+           SELECT CASE WHEN parent_a_id = $1 THEN parent_b_id ELSE parent_a_id END
+           FROM connections
+           WHERE status = 'approved' AND (parent_a_id = $1 OR parent_b_id = $1)
+         )
+       )
+     ORDER BY p.created_at DESC
+     LIMIT 100`,
+    [req.parentId]
+  );
+  res.json({ posts: result.rows });
+});
