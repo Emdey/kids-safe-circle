@@ -4,7 +4,7 @@ import helmet from 'helmet';
 import cors from 'cors';
 import morgan from 'morgan';
 
-import { generalLimiter, strictLimiter } from './middleware/rateLimiter.js';
+import { generalLimiter, authLimiter } from './middleware/rateLimiter.js';
 import { authRouter } from './routes/auth.js';
 import { childrenRouter } from './routes/children.js';
 import { connectionsRouter } from './routes/connections.js';
@@ -33,10 +33,10 @@ app.use(generalLimiter);
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
-app.use('/auth', strictLimiter, authRouter);
+app.use('/auth', authLimiter, authRouter);
 app.use('/children', childrenRouter);
 app.use('/connections', connectionsRouter);
-app.use('/posts', strictLimiter, postsRouter);
+app.use('/posts', postsRouter);
 app.use('/reports', reportsRouter);
 
 app.use((req, res) => {

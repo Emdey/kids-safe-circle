@@ -66,15 +66,51 @@ npm run dev                 # http://localhost:5173
    service's URL.
 3. Deploy. Then go back to Render and set `CORS_ORIGIN` to this Netlify URL.
 
+## Setting up photo/video uploads
+
+Photos and videos upload straight from the browser to Cloudinary (a free
+media hosting service) rather than through the API - keeps things fast
+and keeps Render's free tier from choking on large files.
+
+1. Sign up free at [cloudinary.com](https://cloudinary.com)
+2. On your dashboard, copy your **Cloud name** (shown near the top)
+3. Go to **Settings** (gear icon) → **Upload** tab → **Upload presets** → **Add upload preset**
+4. Set:
+   - **Signing Mode**: `Unsigned`
+   - **Folder**: `kids-safe-circle` (keeps uploads organized)
+   - Under restrictions: cap **Max file size** and limit allowed formats
+     to images/short video - this is your first line of defense against
+     someone abusing the upload endpoint, before content even reaches
+     moderation
+5. Save, and copy the preset's name
+6. Set these in your frontend environment (both locally in `.env` and in
+   Netlify's/Render's environment variables for the deployed site):
+   ```
+   VITE_CLOUDINARY_CLOUD_NAME=your-cloud-name
+   VITE_CLOUDINARY_UPLOAD_PRESET=your-preset-name
+   ```
+
+If these two variables aren't set, the "add a photo or video" option
+just doesn't appear in the kid composer - text-only keeps working either way.
+
+**Important gap:** images are held for manual parent review by default
+(the moderation stub fails closed). **Video has no automated screening
+at all yet** - every clip depends entirely on a parent watching the
+whole thing before approving it. Read `backend/src/services/moderation.js`
+before treating either as production-ready.
+
 ## Before real children use this
 
 This scaffold is a solid, working starting point — not a finished,
 production-hardened product. Specifically still to do:
 
 - [ ] **Moderation**: `backend/src/services/moderation.js` ships with a
-      local keyword-based stub. Wire a real provider (Google Cloud Vision
-      SafeSearch for images, OpenAI's moderation endpoint or Perspective
-      API for text) before any content from real children goes live.
+      local keyword-based stub for text, and fails closed (holds for
+      review) for images. Wire a real provider (Google Cloud Vision
+      SafeSearch for images, Google Video Intelligence or AWS Rekognition
+      Video for video, OpenAI's moderation endpoint or Perspective API
+      for text) before any content from real children goes live -
+      video especially, since there's no automated check at all yet.
 - [ ] **Verifiable parental consent**: signup currently logs a
       verification token to the console instead of emailing it. Wire a
       real email provider and a route that sets `consent_verified_at`,
@@ -83,10 +119,6 @@ production-hardened product. Specifically still to do:
       standard.
 - [ ] **Report handling**: reports are stored but nothing alerts a human
       yet. Wire an email/Slack notification in `backend/src/routes/reports.js`.
-- [ ] **Image uploads**: the API accepts a `mediaUrl` today, meaning you
-      still need to add actual upload handling (e.g. direct-to-S3 or
-      Cloudinary with a moderation hook on upload) before the image path
-      is real.
 - [ ] **Legal review**: have someone review your privacy policy, consent
       flow, and data retention against COPPA (US) and NDPR (Nigeria)
       specifically — this README is engineering guidance, not legal advice.

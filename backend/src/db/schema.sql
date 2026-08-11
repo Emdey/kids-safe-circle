@@ -49,7 +49,7 @@ CREATE TABLE connections (
 -- Nothing is visible to anyone but the posting child's own parent until
 -- moderation_status = 'bloom'.
 CREATE TYPE moderation_status AS ENUM ('seed', 'sprout', 'bloom', 'wilted');
-CREATE TYPE post_content_type AS ENUM ('text', 'image');
+CREATE TYPE post_content_type AS ENUM ('text', 'image', 'video');
 
 CREATE TABLE posts (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),

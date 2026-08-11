@@ -123,10 +123,21 @@ export default function ParentDashboard({ onSignOut, onEnterGarden }) {
               <strong>{post.child_name}</strong>
               <StatusBadge status={post.moderation_status} />
             </div>
-            {post.content_type === 'text' ? (
-              <p>{post.text_content}</p>
-            ) : (
+            {post.content_type === 'text' && <p>{post.text_content}</p>}
+            {post.content_type === 'image' && (
               <img src={post.media_url} alt="" style={{ maxWidth: '100%', borderRadius: 'var(--radius-sm)' }} />
+            )}
+            {post.content_type === 'video' && (
+              <>
+                <video
+                  src={post.media_url}
+                  controls
+                  style={{ maxWidth: '100%', borderRadius: 'var(--radius-sm)' }}
+                />
+                <p style={{ fontSize: 13, color: 'var(--color-ink-soft)' }}>
+                  Videos aren't automatically screened yet — please watch the whole clip before approving.
+                </p>
+              </>
             )}
             {post.moderation_notes && (
               <p style={{ fontSize: 13, color: 'var(--color-clay)' }}>Automated note: {post.moderation_notes}</p>

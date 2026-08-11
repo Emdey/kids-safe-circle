@@ -2,7 +2,8 @@ import { Router } from 'express';
 import { body, validationResult } from 'express-validator';
 import { pool } from '../db/pool.js';
 import { requireParent } from '../middleware/auth.js';
-import { moderateText, moderateImage } from '../services/moderation.js';
+import { postCreateLimiter } from '../middleware/rateLimiter.js';
+import { moderateText, moderateImage, moderateVideo } from '../services/moderation.js';
 
 export const postsRouter = Router();
 postsRouter.use(requireParent);
@@ -18,9 +19,10 @@ async function assertChildBelongsToParent(childId, parentId) {
 // it lands as 'seed' or 'sprout', never 'bloom', until a parent approves it.
 postsRouter.post(
   '/',
+  postCreateLimiter,
   [
     body('childId').isUUID(),
-    body('contentType').isIn(['text', 'image']),
+    body('contentType').isIn(['text', 'image', 'video']),
     body('textContent').optional().isLength({ max: 500 }),
     body('mediaUrl').optional().isURL()
   ],
@@ -35,8 +37,14 @@ postsRouter.post(
       return res.status(403).json({ error: 'Not your child profile.' });
     }
 
-    const check =
-      contentType === 'text' ? await moderateText(textContent || '') : await moderateImage(mediaUrl);
+    let check;
+    if (contentType === 'text') {
+      check = await moderateText(textContent || '');
+    } else if (contentType === 'image') {
+      check = await moderateImage(mediaUrl);
+    } else {
+      check = await moderateVideo(mediaUrl);
+    }
 
     const result = await pool.query(
       `INSERT INTO posts (child_id, parent_id, content_type, text_content, media_url, moderation_status, auto_check_passed, moderation_notes)

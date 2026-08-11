@@ -1,23 +1,61 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api/client.js';
+import { uploadMedia, mediaUploadConfigured } from '../api/cloudinary.js';
+
+const MAX_FILE_MB = 25;
 
 export default function KidGarden({ children, onBackToGate }) {
   const [activeChild, setActiveChild] = useState(null);
   const [posts, setPosts] = useState([]);
   const [draft, setDraft] = useState('');
+  const [file, setFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState(null);
   const [justPlanted, setJustPlanted] = useState(false);
 
   useEffect(() => {
     api.feed().then((res) => setPosts(res.posts));
   }, []);
 
+  function handleFileChange(e) {
+    setError(null);
+    const picked = e.target.files?.[0];
+    if (!picked) return;
+
+    if (!/^image\/|^video\//.test(picked.type)) {
+      setError('Please choose a photo or a video.');
+      return;
+    }
+    if (picked.size > MAX_FILE_MB * 1024 * 1024) {
+      setError(`That file is too big - please choose one under ${MAX_FILE_MB}MB.`);
+      return;
+    }
+    setFile(picked);
+  }
+
   async function plantPost(e) {
     e.preventDefault();
-    if (!draft.trim() || !activeChild) return;
-    await api.createPost({ childId: activeChild.id, contentType: 'text', textContent: draft.trim() });
-    setDraft('');
-    setJustPlanted(true);
-    setTimeout(() => setJustPlanted(false), 2500);
+    if (!activeChild || (!draft.trim() && !file)) return;
+    setError(null);
+
+    try {
+      if (file) {
+        setUploading(true);
+        const resourceType = file.type.startsWith('video/') ? 'video' : 'image';
+        const mediaUrl = await uploadMedia(file, resourceType);
+        await api.createPost({ childId: activeChild.id, contentType: resourceType, mediaUrl });
+      } else {
+        await api.createPost({ childId: activeChild.id, contentType: 'text', textContent: draft.trim() });
+      }
+      setDraft('');
+      setFile(null);
+      setJustPlanted(true);
+      setTimeout(() => setJustPlanted(false), 2500);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setUploading(false);
+    }
   }
 
   if (!activeChild) {
@@ -66,6 +104,7 @@ export default function KidGarden({ children, onBackToGate }) {
           rows={3}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
+          disabled={Boolean(file)}
           style={{
             width: '100%',
             marginTop: 8,
@@ -77,9 +116,39 @@ export default function KidGarden({ children, onBackToGate }) {
           }}
           placeholder="What do you want to share?"
         />
-        <button type="submit" className="btn-bloom" style={{ marginTop: 8, fontSize: 18 }}>
-          Plant it 🌱
+
+        {mediaUploadConfigured() && (
+          <div style={{ marginTop: 8 }}>
+            <label
+              htmlFor="mediaFile"
+              className="btn-quiet"
+              style={{ display: 'inline-block', cursor: 'pointer' }}
+            >
+              📷 Add a photo or video instead
+            </label>
+            <input
+              id="mediaFile"
+              type="file"
+              accept="image/*,video/*"
+              onChange={handleFileChange}
+              style={{ display: 'none' }}
+            />
+            {file && (
+              <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 14 }}>{file.name}</span>
+                <button type="button" className="btn-quiet" onClick={() => setFile(null)}>
+                  Remove
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        <button type="submit" className="btn-bloom" style={{ marginTop: 8, fontSize: 18 }} disabled={uploading}>
+          {uploading ? 'Planting…' : 'Plant it 🌱'}
         </button>
+
+        {error && <p className="error-text">{error}</p>}
         {justPlanted && (
           <p style={{ color: 'var(--color-hedge)', fontWeight: 700 }}>
             Planted! A grown-up will take a look before it shows up in the garden.
@@ -92,10 +161,16 @@ export default function KidGarden({ children, onBackToGate }) {
       {posts.map((post) => (
         <div key={post.id} className="card" style={{ marginTop: 12 }}>
           <strong>{post.child_name}</strong>
-          {post.content_type === 'text' ? (
-            <p style={{ fontSize: 18 }}>{post.text_content}</p>
-          ) : (
+          {post.content_type === 'text' && <p style={{ fontSize: 18 }}>{post.text_content}</p>}
+          {post.content_type === 'image' && (
             <img src={post.media_url} alt="" style={{ maxWidth: '100%', borderRadius: 'var(--radius-sm)' }} />
+          )}
+          {post.content_type === 'video' && (
+            <video
+              src={post.media_url}
+              controls
+              style={{ maxWidth: '100%', borderRadius: 'var(--radius-sm)' }}
+            />
           )}
         </div>
       ))}

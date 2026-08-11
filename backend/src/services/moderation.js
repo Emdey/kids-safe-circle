@@ -12,9 +12,13 @@
  * production - wire a real provider before real children use this app:
  *   - Text: OpenAI Moderation endpoint, Perspective API, or similar
  *   - Images: Google Cloud Vision SafeSearch, AWS Rekognition
- * Both return a machine-checkable signal you can drop into the
- * `moderateText` / `moderateImage` functions below without touching
- * routes/posts.js at all.
+ *   - Video: Google Video Intelligence API, AWS Rekognition Video - these
+ *     scan frame-by-frame, cost more, and take longer than image checks.
+ *     There is no cheap equivalent - budget for this before promising
+ *     video support to real families.
+ * All three return a machine-checkable signal you can drop into the
+ * `moderateText` / `moderateImage` / `moderateVideo` functions below
+ * without touching routes/posts.js at all.
  */
 
 const BLOCKED_PATTERNS = [
@@ -53,4 +57,17 @@ export async function moderateImage(mediaUrl) {
   // your chosen threshold.
 
   throw new Error(`Unknown MODERATION_PROVIDER: ${process.env.MODERATION_PROVIDER}`);
+}
+
+export async function moderateVideo(mediaUrl) {
+  // Unlike moderateImage, this always fails closed regardless of provider
+  // until a real video moderation vendor is wired in - there is no
+  // meaningful automated check to run yet. The parent reviewing this in
+  // the queue is watching the entire clip themselves, not relying on any
+  // machine signal. Keep video clips short at the upload layer (see the
+  // frontend's Cloudinary preset) so that manual review stays realistic.
+  return {
+    passed: false,
+    reason: 'Video content has no automated screen yet - watch the full clip before approving.'
+  };
 }
