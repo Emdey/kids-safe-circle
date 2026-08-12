@@ -22,7 +22,9 @@ CREATE TABLE children (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   parent_id   UUID NOT NULL REFERENCES parents(id) ON DELETE CASCADE,
   display_name TEXT NOT NULL,
-  avatar_key  TEXT NOT NULL DEFAULT 'sprout-1',
+  avatar_key  TEXT NOT NULL DEFAULT 'sprout',
+  favorite_color TEXT NOT NULL DEFAULT 'sunshine', -- purely cosmetic, parent-set, never moderated
+  bio         TEXT,                        -- short, parent-authored - not kid-authored, so no moderation queue needed
   pin_hash    TEXT,                        -- optional 4-digit PIN so kids can pick their own profile
   birth_year  SMALLINT,                    -- year only, never a full DOB
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -79,8 +81,41 @@ CREATE TABLE reports (
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Comments go through the EXACT same seed -> sprout -> bloom pipeline as
+-- posts (see services/moderation.js moderateText). Free text from a child
+-- never becomes visible to another family without a parent approving it -
+-- reactions below are different specifically because they AREN'T free text.
+CREATE TABLE comments (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  post_id           UUID NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  child_id          UUID NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+  parent_id         UUID NOT NULL REFERENCES parents(id) ON DELETE CASCADE,
+  text_content      TEXT NOT NULL,
+  moderation_status moderation_status NOT NULL DEFAULT 'seed',
+  moderation_notes  TEXT,
+  auto_check_passed BOOLEAN,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  reviewed_at       TIMESTAMPTZ
+);
+
+-- Reactions skip the moderation queue on purpose: the emoji a child can
+-- send is a fixed, small set enforced by both the frontend and the API
+-- (see routes/posts.js REACTION_EMOJI) - there is no free-text path here,
+-- so there's nothing for a parent to review.
+CREATE TABLE post_reactions (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  post_id    UUID NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  child_id   UUID NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+  emoji      TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (post_id, child_id, emoji)
+);
+
 CREATE INDEX idx_children_parent ON children(parent_id);
 CREATE INDEX idx_connections_parent_a ON connections(parent_a_id);
 CREATE INDEX idx_connections_parent_b ON connections(parent_b_id);
 CREATE INDEX idx_posts_child ON posts(child_id);
 CREATE INDEX idx_posts_status ON posts(moderation_status);
+CREATE INDEX idx_comments_post ON comments(post_id);
+CREATE INDEX idx_comments_status ON comments(moderation_status);
+CREATE INDEX idx_reactions_post ON post_reactions(post_id);

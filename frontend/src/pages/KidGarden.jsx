@@ -1,8 +1,104 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api/client.js';
 import { uploadMedia, mediaUploadConfigured } from '../api/cloudinary.js';
+import { AVATARS, avatarEmoji, colorHex } from '../constants.js';
 
 const MAX_FILE_MB = 25;
+const REACTION_EMOJI = ['🌻', '💚', '😊', '👍', '🎉'];
+
+function PostCard({ post, activeChild, onChanged }) {
+  const [showComments, setShowComments] = useState(false);
+  const [comments, setComments] = useState([]);
+  const [loadingComments, setLoadingComments] = useState(false);
+  const [commentDraft, setCommentDraft] = useState('');
+  const [commentSent, setCommentSent] = useState(false);
+
+  async function toggleComments() {
+    if (!showComments && comments.length === 0) {
+      setLoadingComments(true);
+      const res = await api.commentsForPost(post.id);
+      setComments(res.comments);
+      setLoadingComments(false);
+    }
+    setShowComments((s) => !s);
+  }
+
+  async function handleReact(emoji) {
+    await api.toggleReaction(post.id, activeChild.id, emoji);
+    onChanged();
+  }
+
+  async function handleComment(e) {
+    e.preventDefault();
+    if (!commentDraft.trim()) return;
+    await api.createComment(post.id, activeChild.id, commentDraft.trim());
+    setCommentDraft('');
+    setCommentSent(true);
+    setTimeout(() => setCommentSent(false), 2500);
+  }
+
+  return (
+    <div className="card" style={{ marginTop: 12, borderLeft: `4px solid ${colorHex(post.favorite_color)}` }}>
+      <strong>{avatarEmoji(post.avatar_key)} {post.child_name}</strong>
+      {post.content_type === 'text' && <p style={{ fontSize: 18 }}>{post.text_content}</p>}
+      {post.content_type === 'image' && (
+        <img src={post.media_url} alt="" style={{ maxWidth: '100%', borderRadius: 'var(--radius-sm)' }} />
+      )}
+      {post.content_type === 'video' && (
+        <video src={post.media_url} controls style={{ maxWidth: '100%', borderRadius: 'var(--radius-sm)' }} />
+      )}
+
+      <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
+        {REACTION_EMOJI.map((emoji) => {
+          const found = post.reactions?.find((r) => r.emoji === emoji);
+          return (
+            <button
+              key={emoji}
+              type="button"
+              className="btn-quiet"
+              style={{ padding: '4px 10px', fontSize: 16 }}
+              onClick={() => handleReact(emoji)}
+            >
+              {emoji} {found ? found.count : ''}
+            </button>
+          );
+        })}
+      </div>
+
+      <button type="button" className="btn-quiet" style={{ marginTop: 8, fontSize: 13 }} onClick={toggleComments}>
+        💬 {post.comment_count > 0 ? `${post.comment_count} comment${post.comment_count === 1 ? '' : 's'}` : 'Say something nice'}
+      </button>
+
+      {showComments && (
+        <div style={{ marginTop: 8 }}>
+          {loadingComments && <p style={{ fontSize: 13 }}>Loading…</p>}
+          {comments.map((c) => (
+            <p key={c.id} style={{ fontSize: 14, margin: '4px 0' }}>
+              <strong>{avatarEmoji(c.avatar_key)} {c.child_name}:</strong> {c.text_content}
+            </p>
+          ))}
+          <form onSubmit={handleComment} style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+            <input
+              placeholder="Write something kind…"
+              value={commentDraft}
+              onChange={(e) => setCommentDraft(e.target.value)}
+              maxLength={300}
+              style={{ flex: 1 }}
+            />
+            <button type="submit" className="btn-bloom" style={{ padding: '6px 14px' }}>
+              Send
+            </button>
+          </form>
+          {commentSent && (
+            <p style={{ fontSize: 13, color: 'var(--color-hedge)', fontWeight: 700 }}>
+              Sent! A grown-up will look at it before others see it.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function KidGarden({ children, onBackToGate }) {
   const [activeChild, setActiveChild] = useState(null);
@@ -13,8 +109,13 @@ export default function KidGarden({ children, onBackToGate }) {
   const [error, setError] = useState(null);
   const [justPlanted, setJustPlanted] = useState(false);
 
+  async function refreshFeed() {
+    const res = await api.feed();
+    setPosts(res.posts);
+  }
+
   useEffect(() => {
-    api.feed().then((res) => setPosts(res.posts));
+    refreshFeed();
   }, []);
 
   function handleFileChange(e) {
@@ -69,14 +170,14 @@ export default function KidGarden({ children, onBackToGate }) {
               onClick={() => setActiveChild(child)}
               style={{
                 background: 'var(--color-bg-elevated)',
-                border: '3px solid var(--color-sprout)',
+                border: `3px solid ${colorHex(child.favorite_color)}`,
                 borderRadius: 'var(--radius-lg)',
                 padding: 20,
                 width: 130,
                 fontSize: 18
               }}
             >
-              <div style={{ fontSize: 40 }}>🌱</div>
+              <div style={{ fontSize: 40 }}>{avatarEmoji(child.avatar_key)}</div>
               {child.display_name}
             </button>
           ))}
@@ -159,20 +260,7 @@ export default function KidGarden({ children, onBackToGate }) {
       <h2 style={{ marginTop: 32, fontSize: 20 }}>The garden 🌼</h2>
       {posts.length === 0 && <p>Nothing has bloomed yet — check back soon!</p>}
       {posts.map((post) => (
-        <div key={post.id} className="card" style={{ marginTop: 12 }}>
-          <strong>{post.child_name}</strong>
-          {post.content_type === 'text' && <p style={{ fontSize: 18 }}>{post.text_content}</p>}
-          {post.content_type === 'image' && (
-            <img src={post.media_url} alt="" style={{ maxWidth: '100%', borderRadius: 'var(--radius-sm)' }} />
-          )}
-          {post.content_type === 'video' && (
-            <video
-              src={post.media_url}
-              controls
-              style={{ maxWidth: '100%', borderRadius: 'var(--radius-sm)' }}
-            />
-          )}
-        </div>
+        <PostCard key={post.id} post={post} activeChild={activeChild} onChanged={refreshFeed} />
       ))}
     </div>
   );

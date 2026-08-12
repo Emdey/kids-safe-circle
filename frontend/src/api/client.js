@@ -37,6 +37,7 @@ export const api = {
 
   listChildren: () => request('/children'),
   addChild: (child) => request('/children', { method: 'POST', body: child }),
+  updateChild: (childId, updates) => request(`/children/${childId}`, { method: 'PATCH', body: updates }),
   removeChild: (childId) => request(`/children/${childId}`, { method: 'DELETE' }),
 
   listConnections: () => request('/connections'),
@@ -47,6 +48,15 @@ export const api = {
   reviewQueue: () => request('/posts/queue'),
   decidePost: (postId, decision) => request(`/posts/${postId}/decide`, { method: 'POST', body: { decision } }),
   feed: () => request('/posts/feed'),
+  toggleReaction: (postId, childId, emoji) =>
+    request(`/posts/${postId}/reactions`, { method: 'POST', body: { childId, emoji } }),
+
+  createComment: (postId, childId, textContent) =>
+    request('/comments', { method: 'POST', body: { postId, childId, textContent } }),
+  commentsForPost: (postId) => request(`/comments/for-post/${postId}`),
+  commentQueue: () => request('/comments/queue'),
+  decideComment: (commentId, decision) =>
+    request(`/comments/${commentId}/decide`, { method: 'POST', body: { decision } }),
 
   report: (payload) => request('/reports', { method: 'POST', body: payload })
 };

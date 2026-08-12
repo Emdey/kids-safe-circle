@@ -9,6 +9,7 @@ import { authRouter } from './routes/auth.js';
 import { childrenRouter } from './routes/children.js';
 import { connectionsRouter } from './routes/connections.js';
 import { postsRouter } from './routes/posts.js';
+import { commentsRouter } from './routes/comments.js';
 import { reportsRouter } from './routes/reports.js';
 
 const requiredEnvVars = ['DATABASE_URL', 'JWT_SECRET', 'CORS_ORIGIN'];
@@ -37,6 +38,7 @@ app.use('/auth', authLimiter, authRouter);
 app.use('/children', childrenRouter);
 app.use('/connections', connectionsRouter);
 app.use('/posts', postsRouter);
+app.use('/comments', commentsRouter);
 app.use('/reports', reportsRouter);
 
 app.use((req, res) => {

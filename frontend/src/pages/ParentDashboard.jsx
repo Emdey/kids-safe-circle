@@ -2,23 +2,31 @@ import { useEffect, useState } from 'react';
 import { api, clearToken } from '../api/client.js';
 import FenceDivider from '../components/FenceDivider.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
-
-const AVATARS = ['sprout-1', 'sprout-2', 'sprout-3', 'sprout-4', 'sprout-5', 'sprout-6'];
+import { AVATARS, FAVORITE_COLORS, avatarEmoji, colorHex } from '../constants.js';
 
 export default function ParentDashboard({ onSignOut, onEnterGarden }) {
   const [children, setChildren] = useState([]);
   const [connections, setConnections] = useState([]);
   const [queue, setQueue] = useState([]);
+  const [commentQueue, setCommentQueue] = useState([]);
   const [newChildName, setNewChildName] = useState('');
-  const [newChildAvatar, setNewChildAvatar] = useState(AVATARS[0]);
+  const [newChildAvatar, setNewChildAvatar] = useState(AVATARS[0].key);
+  const [newChildColor, setNewChildColor] = useState(FAVORITE_COLORS[0].key);
+  const [newChildBio, setNewChildBio] = useState('');
   const [connectEmail, setConnectEmail] = useState('');
   const [message, setMessage] = useState(null);
 
   async function refreshAll() {
-    const [c, conn, q] = await Promise.all([api.listChildren(), api.listConnections(), api.reviewQueue()]);
+    const [c, conn, q, cq] = await Promise.all([
+      api.listChildren(),
+      api.listConnections(),
+      api.reviewQueue(),
+      api.commentQueue()
+    ]);
     setChildren(c.children);
     setConnections(conn.connections);
     setQueue(q.queue);
+    setCommentQueue(cq.queue);
   }
 
   useEffect(() => {
@@ -28,8 +36,14 @@ export default function ParentDashboard({ onSignOut, onEnterGarden }) {
   async function handleAddChild(e) {
     e.preventDefault();
     try {
-      await api.addChild({ displayName: newChildName, avatarKey: newChildAvatar });
+      await api.addChild({
+        displayName: newChildName,
+        avatarKey: newChildAvatar,
+        favoriteColor: newChildColor,
+        bio: newChildBio.trim() || undefined
+      });
       setNewChildName('');
+      setNewChildBio('');
       await refreshAll();
     } catch (err) {
       setMessage(err.message);
@@ -58,6 +72,11 @@ export default function ParentDashboard({ onSignOut, onEnterGarden }) {
     await refreshAll();
   }
 
+  async function handleDecideComment(commentId, decision) {
+    await api.decideComment(commentId, decision);
+    await refreshAll();
+  }
+
   const pendingIncoming = connections.filter((c) => c.status === 'pending');
   const approved = connections.filter((c) => c.status === 'approved');
 
@@ -82,34 +101,69 @@ export default function ParentDashboard({ onSignOut, onEnterGarden }) {
             <div
               key={child.id}
               style={{
-                border: '1px solid var(--color-border)',
+                border: `2px solid ${colorHex(child.favorite_color)}`,
                 borderRadius: 'var(--radius-md)',
                 padding: 12,
-                minWidth: 120,
+                minWidth: 130,
+                maxWidth: 160,
                 textAlign: 'center'
               }}
             >
-              <div style={{ fontSize: 32 }}>🌱</div>
+              <div style={{ fontSize: 32 }}>{avatarEmoji(child.avatar_key)}</div>
               <strong>{child.display_name}</strong>
+              {child.bio && (
+                <p style={{ fontSize: 12, color: 'var(--color-ink-soft)', marginTop: 4 }}>{child.bio}</p>
+              )}
             </div>
           ))}
         </div>
 
-        <form onSubmit={handleAddChild} style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <input
-            placeholder="Child's first name"
-            value={newChildName}
-            onChange={(e) => setNewChildName(e.target.value)}
-            required
-            style={{ flex: 1, minWidth: 160 }}
-          />
-          <select value={newChildAvatar} onChange={(e) => setNewChildAvatar(e.target.value)}>
-            {AVATARS.map((a) => (
-              <option key={a} value={a}>
-                {a}
-              </option>
+        <form onSubmit={handleAddChild}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+            <input
+              placeholder="Child's first name"
+              value={newChildName}
+              onChange={(e) => setNewChildName(e.target.value)}
+              required
+              style={{ flex: 1, minWidth: 160 }}
+            />
+            <select value={newChildAvatar} onChange={(e) => setNewChildAvatar(e.target.value)}>
+              {AVATARS.map((a) => (
+                <option key={a.key} value={a.key}>
+                  {a.emoji} {a.key}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+            <span style={{ fontSize: 13, color: 'var(--color-ink-soft)' }}>Favorite color:</span>
+            {FAVORITE_COLORS.map((c) => (
+              <button
+                key={c.key}
+                type="button"
+                onClick={() => setNewChildColor(c.key)}
+                aria-label={c.key}
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: '50%',
+                  background: c.hex,
+                  border: newChildColor === c.key ? '3px solid var(--color-ink)' : '2px solid transparent',
+                  padding: 0
+                }}
+              />
             ))}
-          </select>
+          </div>
+
+          <input
+            placeholder="Short bio (optional) — e.g. 'loves dinosaurs and drawing'"
+            value={newChildBio}
+            onChange={(e) => setNewChildBio(e.target.value)}
+            maxLength={100}
+            style={{ marginBottom: 8 }}
+          />
+
           <button type="submit" className="btn-primary">Add child</button>
         </form>
       </div>
@@ -147,6 +201,34 @@ export default function ParentDashboard({ onSignOut, onEnterGarden }) {
                 Let it bloom
               </button>
               <button className="btn-quiet" onClick={() => handleDecide(post.id, 'wilted')}>
+                Don't show it
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <FenceDivider label="Comments waiting for your OK" />
+      <div className="card">
+        {commentQueue.length === 0 && <p>Nothing waiting for review right now.</p>}
+        {commentQueue.map((comment) => (
+          <div key={comment.id} style={{ borderBottom: '1px solid var(--color-border)', padding: '12px 0' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <strong>{comment.child_name}</strong>
+              <StatusBadge status={comment.moderation_status} />
+            </div>
+            <p style={{ fontSize: 13, color: 'var(--color-ink-soft)' }}>
+              Replying to: {comment.post_content_type === 'text' ? `"${comment.post_text_content}"` : `a ${comment.post_content_type}`}
+            </p>
+            <p>{comment.text_content}</p>
+            {comment.moderation_notes && (
+              <p style={{ fontSize: 13, color: 'var(--color-clay)' }}>Automated note: {comment.moderation_notes}</p>
+            )}
+            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              <button className="btn-bloom" onClick={() => handleDecideComment(comment.id, 'bloom')}>
+                Let it bloom
+              </button>
+              <button className="btn-quiet" onClick={() => handleDecideComment(comment.id, 'wilted')}>
                 Don't show it
               </button>
             </div>

@@ -17,6 +17,21 @@ can see it. This logic is enforced in the database queries themselves
 (see `backend/src/db/schema.sql` and `backend/src/routes/posts.js`), not
 just hidden in the UI.
 
+## Feed features (reactions, comments, richer profiles)
+
+These add liveliness without changing the trust boundary above:
+
+- **Reactions** use a fixed, small emoji set (`🌻💚😊👍🎉`) enforced on
+  both frontend and backend — never free text, so there's nothing to
+  moderate and no queue for them.
+- **Comments** are free text, so they go through the *exact same*
+  seed → sprout → bloom pipeline as posts (`backend/src/routes/comments.js`).
+  A comment is invisible to anyone outside the family until its own
+  parent approves it, same as a post.
+- **Profiles** (avatar, favorite color, short bio) are parent-authored at
+  creation/edit time — same trust level as a child's display name, so
+  they skip the moderation queue on purpose.
+
 ## Project layout
 
 ```
