@@ -102,8 +102,9 @@ postsRouter.post('/:postId/decide', [body('decision').isIn(['bloom', 'wilted'])]
   res.json({ post: result.rows[0] });
 });
 
-// Toggle a reaction: tapping the same emoji again removes it. childId is
-// which of the signed-in parent's children is reacting (same pattern as
+// One reaction per child per post. Tapping the currently-active emoji
+// removes it; tapping a different one switches to it. childId is which
+// of the signed-in parent's children is reacting (same pattern as
 // posting - the parent's session is the authentication, the child is
 // just which profile is "speaking").
 postsRouter.post(
@@ -123,14 +124,21 @@ postsRouter.post(
       return res.status(404).json({ error: 'Post not found.' });
     }
 
-    const existing = await pool.query(
-      'SELECT id FROM post_reactions WHERE post_id = $1 AND child_id = $2 AND emoji = $3',
-      [req.params.postId, childId, emoji]
-    );
+    const existing = await pool.query('SELECT id, emoji FROM post_reactions WHERE post_id = $1 AND child_id = $2', [
+      req.params.postId,
+      childId
+    ]);
 
     if (existing.rowCount > 0) {
-      await pool.query('DELETE FROM post_reactions WHERE id = $1', [existing.rows[0].id]);
-      return res.json({ reacted: false });
+      if (existing.rows[0].emoji === emoji) {
+        await pool.query('DELETE FROM post_reactions WHERE id = $1', [existing.rows[0].id]);
+        return res.json({ reacted: false });
+      }
+      await pool.query('UPDATE post_reactions SET emoji = $1, created_at = now() WHERE id = $2', [
+        emoji,
+        existing.rows[0].id
+      ]);
+      return res.json({ reacted: true, emoji });
     }
 
     await pool.query('INSERT INTO post_reactions (post_id, child_id, emoji) VALUES ($1, $2, $3)', [
@@ -138,13 +146,16 @@ postsRouter.post(
       childId,
       emoji
     ]);
-    res.json({ reacted: true });
+    res.json({ reacted: true, emoji });
   }
 );
 
 // The feed: only 'bloom' posts, only from this parent's own children plus
 // children of parents in an 'approved' connection. No global feed exists.
+// ?childId= is optional and only used to report back which reaction (if
+// any) THAT child already has on each post, so the UI can highlight it.
 postsRouter.get('/feed', async (req, res) => {
+  const { childId } = req.query;
   const posts = await pool.query(
     `SELECT p.id, p.content_type, p.text_content, p.media_url, p.created_at,
             c.display_name AS child_name, c.avatar_key, c.favorite_color
@@ -167,6 +178,7 @@ postsRouter.get('/feed', async (req, res) => {
   const postIds = posts.rows.map((p) => p.id);
   let reactionsByPost = {};
   let commentCountByPost = {};
+  let myReactionByPost = {};
 
   if (postIds.length > 0) {
     const reactions = await pool.query(
@@ -192,12 +204,24 @@ postsRouter.get('/feed', async (req, res) => {
       acc[r.post_id] = r.count;
       return acc;
     }, {});
+
+    if (childId) {
+      const mine = await pool.query(
+        'SELECT post_id, emoji FROM post_reactions WHERE post_id = ANY($1) AND child_id = $2',
+        [postIds, childId]
+      );
+      myReactionByPost = mine.rows.reduce((acc, r) => {
+        acc[r.post_id] = r.emoji;
+        return acc;
+      }, {});
+    }
   }
 
   const withExtras = posts.rows.map((p) => ({
     ...p,
     reactions: reactionsByPost[p.id] || [],
-    comment_count: commentCountByPost[p.id] || 0
+    comment_count: commentCountByPost[p.id] || 0,
+    my_reaction: myReactionByPost[p.id] || null
   }));
 
   res.json({ posts: withExtras, reactionEmoji: REACTION_EMOJI });

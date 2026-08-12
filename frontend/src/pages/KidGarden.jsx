@@ -51,11 +51,12 @@ function PostCard({ post, activeChild, onChanged }) {
       <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
         {REACTION_EMOJI.map((emoji) => {
           const found = post.reactions?.find((r) => r.emoji === emoji);
+          const isMine = post.my_reaction === emoji;
           return (
             <button
               key={emoji}
               type="button"
-              className="btn-quiet"
+              className={isMine ? 'btn-bloom' : 'btn-quiet'}
               style={{ padding: '4px 10px', fontSize: 16 }}
               onClick={() => handleReact(emoji)}
             >
@@ -110,13 +111,14 @@ export default function KidGarden({ children, onBackToGate }) {
   const [justPlanted, setJustPlanted] = useState(false);
 
   async function refreshFeed() {
-    const res = await api.feed();
+    if (!activeChild) return;
+    const res = await api.feed(activeChild.id);
     setPosts(res.posts);
   }
 
   useEffect(() => {
     refreshFeed();
-  }, []);
+  }, [activeChild]);
 
   function handleFileChange(e) {
     setError(null);
@@ -218,7 +220,7 @@ export default function KidGarden({ children, onBackToGate }) {
           placeholder="What do you want to share?"
         />
 
-        {mediaUploadConfigured() && (
+        {mediaUploadConfigured() ? (
           <div style={{ marginTop: 8 }}>
             <label
               htmlFor="mediaFile"
@@ -243,6 +245,12 @@ export default function KidGarden({ children, onBackToGate }) {
               </div>
             )}
           </div>
+        ) : (
+          <p style={{ fontSize: 12, color: 'var(--color-clay)', marginTop: 8 }}>
+            Photo/video sharing isn't set up yet. (cloud name:{' '}
+            {import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || 'MISSING'}, preset:{' '}
+            {import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'MISSING'})
+          </p>
         )}
 
         <button type="submit" className="btn-bloom" style={{ marginTop: 8, fontSize: 18 }} disabled={uploading}>

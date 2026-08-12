@@ -47,7 +47,7 @@ export const api = {
   createPost: (post) => request('/posts', { method: 'POST', body: post }),
   reviewQueue: () => request('/posts/queue'),
   decidePost: (postId, decision) => request(`/posts/${postId}/decide`, { method: 'POST', body: { decision } }),
-  feed: () => request('/posts/feed'),
+  feed: (childId) => request(`/posts/feed${childId ? `?childId=${childId}` : ''}`),
   toggleReaction: (postId, childId, emoji) =>
     request(`/posts/${postId}/reactions`, { method: 'POST', body: { childId, emoji } }),
 
